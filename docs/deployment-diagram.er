@@ -1,0 +1,33 @@
+direction: right
+
+// Nodes and groups
+Deployment Pipeline [shape: oval, icon: git-branch]
+
+BuildProcess [color: blue] {
+  GitHub Push [icon: git-commit]
+  Actions Trigger [icon: play-circle]
+  Install Dependencies [icon: package]
+  Build Next.js [icon: code]
+}
+
+AWSDeployment [color: orange] {
+  Configure AWS [icon: key]
+  S3 Upload [icon: upload-cloud]
+  CloudFront Cache [icon: refresh-cw]
+}
+
+Distribution [color: green] {
+  CDN [icon: globe]
+  Users [icon: users]
+}
+
+// Relationships
+Deployment Pipeline > GitHub Push
+GitHub Push > Actions Trigger
+Actions Trigger > Install Dependencies
+Install Dependencies > Build Next.js
+Build Next.js > Configure AWS
+Configure AWS > S3 Upload
+S3 Upload > CloudFront Cache
+CloudFront Cache > CDN
+CDN > Users
