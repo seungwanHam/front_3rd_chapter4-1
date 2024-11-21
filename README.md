@@ -1,13 +1,40 @@
 # Next.js 프론트엔드 배포 파이프라인
 
+## 목차
+
+- [Next.js 프론트엔드 배포 파이프라인](#nextjs-프론트엔드-배포-파이프라인)
+  - [목차](#목차)
+  - [프로젝트 소개](#프로젝트-소개)
+  - [기술 스택](#기술-스택)
+  - [배포 아키텍처](#배포-아키텍처)
+  - [인프라 구성 상세](#인프라-구성-상세)
+    - [Amazon S3](#amazon-s3)
+    - [Amazon CloudFront](#amazon-cloudfront)
+  - [CDN 성능 최적화 보고서](#cdn-성능-최적화-보고서)
+    - [테스트 환경](#테스트-환경)
+    - [네트워크 성능 측정 결과](#네트워크-성능-측정-결과)
+    - [성능 비교 결과](#성능-비교-결과)
+    - [주요 개선사항](#주요-개선사항)
+  - [배포 프로세스 개요](#배포-프로세스-개요)
+  - [주요 개념 설명](#주요-개념-설명)
+    - [GitHub Actions과 CI/CD](#github-actions과-cicd)
+    - [S3와 정적 웹 호스팅](#s3와-정적-웹-호스팅)
+    - [CloudFront와 CDN](#cloudfront와-cdn)
+    - [캐시 무효화(Cache Invalidation)](#캐시-무효화cache-invalidation)
+    - [Repository Secret과 환경 변수](#repository-secret과-환경-변수)
+  - [보안 설정](#보안-설정)
+    - [GitHub Secrets](#github-secrets)
+    - [IAM 정책](#iam-정책)
+  - [주요 링크](#주요-링크)
+  - [프로젝트 구조](#프로젝트-구조)
+  - [로컬 개발 환경 설정](#로컬-개발-환경-설정)
+  - [배포 히스토리](#배포-히스토리)
+  - [향후 개선 계획](#향후-개선-계획)
+  - [참고 문서](#참고-문서)
+
 ## 프로젝트 소개
 
 이 프로젝트는 Next.js 애플리케이션을 AWS 클라우드 인프라를 활용하여 자동화된 배포 파이프라인을 구축한 것입니다. GitHub Actions를 통한 CI/CD 구현으로 효율적이고 안정적인 배포 프로세스를 확립했습니다.
-
-## 배포 아키텍처
-![배포 파이프라인 다이어그램](./docs/deployment-diagram.png)
-
-배포 파이프라인 다이어그램은 [Eraser.io](https://eraser.io)로 작성되었으며, 소스 코드는 `docs/deployment-diagram.er`에서 확인할 수 있습니다.
 
 ## 기술 스택
 
@@ -16,6 +43,86 @@
 - **스타일링**: Tailwind CSS
 - **배포 환경**: AWS (S3, CloudFront)
 - **CI/CD**: GitHub Actions
+
+## 배포 아키텍처
+
+![배포 파이프라인 다이어그램](./docs/images/deployment-diagram.png)
+
+배포 파이프라인 다이어그램은 [Eraser.io](https://eraser.io)로 작성되었으며, 소스 코드는 `docs/deployment-diagram.er`에서 확인할 수 있습니다.
+
+## 인프라 구성 상세
+
+### Amazon S3
+
+- **버킷 설정**:
+  - 정적 웹사이트 호스팅 활성화 (버킷 호스팅 타입)
+  - 퍼블릭 액세스: 허용됨
+- **버저닝**: 비활성화
+- **암호화**: Amazon S3 관리형 키(SSE-S3)를 사용한 서버 측 암호화 적용
+
+### Amazon CloudFront
+
+- **원본 설정**: S3 버킷 연결
+- **HTTP 지원**: HTTP/2, HTTP/1.1, HTTP/1.0
+- **캐시 설정**:
+  - 캐시 정책: Managed-CachingOptimized 사용
+  - HTTP를 HTTPS로 리디렉션
+
+## CDN 성능 최적화 보고서
+
+### 테스트 환경
+
+- 테스트 도구: Chrome DevTools Network 탭
+- 네트워크 조건: 3G
+- 캐시 설정: Disable cache 활성화 (브라우저 캐시 사용 안 함)
+- 테스트 위치: 서울
+- 테스트 일시: 2024.11.21
+- 테스트 대상:
+  - S3 직접 연결: http://seungwan.s3-website.ap-northeast-2.amazonaws.com
+  - CloudFront CDN: https://d2pf6x43p3m6rf.cloudfront.net
+
+### 네트워크 성능 측정 결과
+
+<table>
+  <tr>
+    <td width="50%">
+      <h4>S3 직접 연결 성능</h4>
+      <img src="docs/images/s3-network-performance.png" alt="S3 직접 연결 네트워크 성능">
+    </td>
+    <td width="50%">
+      <h4>CloudFront CDN 성능</h4>
+      <img src="docs/images/cloudfront-network-performance.png" alt="CloudFront CDN 네트워크 성능">
+    </td>
+  </tr>
+</table>
+
+### 성능 비교 결과
+
+| 측정 지표        | S3 직접 연결 | CloudFront CDN | 개선율  |
+| ---------------- | ------------ | -------------- | ------- |
+| 총 완료 시간     | 17.21초      | 11.74초        | 31.8% ↓ |
+| DOMContentLoaded | 4.89초       | 4.50초         | 8.0% ↓  |
+| Load 이벤트      | 14.66초      | 9.20초         | 37.2% ↓ |
+| 전송 크기        | 555KB        | 274KB          | 50.6% ↓ |
+| 리소스 크기      | 549KB        | 549KB          | -       |
+| 요청 수          | 16건         | 16건           | -       |
+
+### 주요 개선사항
+
+1. **전송 크기 최적화**
+
+   - CloudFront를 통한 전송 시 데이터 전송량이 50.6% 감소
+   - 동일한 리소스 크기(549KB)에 대해 더 효율적인 전송 수행
+
+2. **로딩 성능 향상**
+
+   - 전체 페이지 완료 시간 31.8% 단축
+   - Load 이벤트 시간 37.2% 개선
+   - 초기 렌더링 시간(DOMContentLoaded) 8.0% 개선
+
+3. **리소스 처리 효율**
+   - 동일한 요청 수(16건)에 대해 더 빠른 처리
+   - 압축 및 최적화된 전송으로 대역폭 사용 효율 증가
 
 ## 배포 프로세스 개요
 
@@ -49,24 +156,6 @@ GitHub Actions 워크플로우를 통해 다음과 같이 자동화된 배포가
 
 7. **CloudFront 캐시 무효화**
    - 새로운 배포 내용을 즉시 반영하기 위해 CDN 캐시를 초기화합니다.
-
-## 인프라 구성 상세
-
-### Amazon S3
-
-- **버킷 설정**:
-  - 정적 웹사이트 호스팅 활성화 (버킷 호스팅 타입)
-  - 퍼블릭 액세스: 허용됨
-- **버저닝**: 비활성화
-- **암호화**: Amazon S3 관리형 키(SSE-S3)를 사용한 서버 측 암호화 적용
-
-### Amazon CloudFront
-
-- **원본 설정**: S3 버킷 연결
-- **HTTP 지원**: HTTP/2, HTTP/1.1, HTTP/1.0
-- **캐시 설정**:
-  - 캐시 정책: Managed-CachingOptimized 사용
-  - HTTP를 HTTPS로 리디렉션
 
 ## 주요 개념 설명
 
@@ -128,12 +217,6 @@ CloudFront는 AWS의 CDN 서비스로, 전 세계 엣지 로케이션을 통해 
 }
 ```
 
-## 모니터링 및 로깅
-
-- **CloudWatch**: 접근 로그 및 오류 모니터링
-- **S3 액세스 로깅**: 버킷 액세스 기록 저장
-- **CloudFront 로깅**: CDN 접근 로그 분석
-
 ## 주요 링크
 
 - S3 버킷 웹사이트 엔드포인트: http://seungwan.s3-website.ap-northeast-2.amazonaws.com
@@ -144,10 +227,12 @@ CloudFront는 AWS의 CDN 서비스로, 전 세계 엣지 로케이션을 통해 
 ```
 project-root/
 ├── .github/
-│ └── workflows/
-│ └── deployment.yml # GitHub Actions 워크플로우
 ├── docs/
-│ └── deployment-diagram.er # 배포 파이프라인 다이어그램
+│ ├── deployment-diagram.er
+│ └── images/
+│     ├── deployment-diagram.png
+│     ├── s3-network-performance.png
+│     └── cloudfront-network-performance.png
 ├── src/
 │ ├── app/
 │ │ ├── layout.tsx
@@ -161,7 +246,7 @@ project-root/
 
 ```bash
 프로젝트 클론
-git clone [repository-url]
+git clone https://github.com/seungwanHam/front_3rd_chapter4-1.git
 
 의존성 설치
 npm install
@@ -177,15 +262,14 @@ npm run build
 
 - 초기 배포: 2024.11.21
 - 주요 업데이트:
-  - CloudFront 캐시 설정 최적화 (2024.11.21)
-  - GitHub Actions 워크플로우 개선 (2024.11.21)
+  - CloudFront 설정 (2024.11.21)
+  - GitHub Actions 워크플로우 (2024.11.21)
 
 ## 향후 개선 계획
 
 1. **Route53 도메인 연결**
 
    - 커스텀 도메인 설정
-   - SSL 인증서 자동 갱신
 
 2. **성능 최적화**
 
@@ -195,17 +279,6 @@ npm run build
 3. **모니터링 강화**
    - CloudWatch 알람 설정
    - 슬랙 알림 연동
-
-## 문제 해결 가이드
-
-일반적인 문제 해결 방법:
-
-1. **배포 실패 시**
-   - GitHub Actions 로그 확인
-   - AWS IAM 권한 검증
-2. **캐시 문제 발생 시**
-   - CloudFront 캐시 수동 무효화
-   - 브라우저 캐시 확인
 
 ## 참고 문서
 
